@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TI‑84 Plus CE Python WebUSB Manager</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 10px;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 10px;
+      border: 1px solid #ddd;
+    }
+    button {
+      margin-top: 10px;
+    }
+    #fileList {
+      margin-top: 20px;
+      list-style-type: none;
+    }
+    #fileList li {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>TI‑84 Plus CE Python File Manager</h1>
+
+  <button id="connectBtn">Connect to Calculator</button><br><br>
+
+  <input type="file" id="fileInput" accept=".8xp,.8xv,.8xg,.8xl,.8xk,.8xi,.8xm,.py" /><br><br>
+
+  <h2>Files on Calculator:</h2>
+  <ul id="fileList"></ul>
+
+  <pre id="log"></pre>
+
+  <!-- Include ticalc-usb from a CDN -->
+  <script type="module">
+    import { ticalc, tifiles } from 'https://unpkg.com/ticalc-usb@2.0.0/dist/index.js';
+
+    const logEl = document.getElementById('log');
+    const connectBtn = document.getElementById('connectBtn');
+    const fileInput = document.getElementById('fileInput');
+    const fileListEl = document.getElementById('fileList');
+
+    const log = (...args) => {
+      logEl.textContent += args.join(' ') + '\n';
+    };
+
+    let calc = null;
+
+    // Connect to the calculator
+    connectBtn.addEventListener('click', async () => {
+      try {
+        log('Requesting calculator connection...');
+        await ticalc.init();
+        calc = await ticalc.choose();
+        log(`Connected to: ${calc.name}`);
+
+        const ready = await calc.isReady();
+        if (ready) {
+          log('Calculator is ready for file transfer.');
+          await listFiles();
+        } else {
+          log('Calculator not ready.');
+        }
+      } catch (err) {
+        log('Error:', err.message || err);
+      }
+    });
+
+    // List files on the calculator
+    async function listFiles() {
+      if (!calc) return log('Please connect to a calculator first.');
+      try {
+        const files = await calc.listFiles();
+        fileListEl.innerHTML = ''; // Clear previous list
+        if (files.length === 0) {
+          fileListEl.innerHTML = '<li>No files found.</li>';
+        }
+        files.forEach(file => {
+          const li = document.createElement('li');
+          li.textContent = `${file.name} (${file.size} bytes)`;
+
+          // Delete button
+          const deleteBtn = document.createElement('button');
+          deleteBtn.textContent = 'Delete';
+          deleteBtn.onclick = async () => {
+            await deleteFile(file.name);
+          };
+
+          li.appendChild(deleteBtn);
+          fileListEl.appendChild(li);
+        });
+      } catch (err) {
+        log('Error listing files:', err.message || err);
+      }
+    }
+
+    // Delete file from the calculator
+    async function deleteFile(fileName) {
+      if (!calc) return log('Please connect to a calculator first.');
+      try {
+        await calc.deleteFile(fileName);
+        log(`Deleted file: ${fileName}`);
+        await listFiles(); // Refresh the file list
+      } catch (err) {
+        log('Error deleting file:', err.message || err);
+      }
+    }
+
+    // Upload file to the calculator
+    fileInput.addEventListener('change', async (event) => {
+      if (!calc) {
+        return log('Please connect your calculator first.');
+      }
+
+      const file = event.target.files[0];
+      if (!file) return;
+
+      try {
+        const data = new Uint8Array(await file.arrayBuffer());
+        const calcFile = tifiles.parseFile(data);
+
+        if (!tifiles.isValid(calcFile)) {
+          return log('Invalid TI file format.');
+        }
+
+        if (!calc.canReceive(calcFile)) {
+          return log('Calculator cannot receive this file type.');
+        }
+
+        await calc.sendFile(calcFile);
+        log(`✅ Sent file: ${file.name}`);
+        await listFiles(); // Refresh the file list
+      } catch (err) {
+        log('File transfer failed:', err.message || err);
+      }
+    });
+  </script>
+</body>
+</html>
